@@ -3,8 +3,13 @@ package sectorstorage
 import (
 	"context"
 	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/elastic/go-sysinfo"
 	"golang.org/x/xerrors"
@@ -174,11 +179,41 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID) e
 		return xerrors.Errorf("removing unsealed data: %w", err)
 	}
 
+
 	if err := l.storage.MoveStorage(ctx, sector, l.scfg.SealProofType, stores.FTSealed|stores.FTCache); err != nil {
 		return xerrors.Errorf("moving sealed data to storage: %w", err)
 	}
 
+	log.Warn("====================================================================================")
+	workerinfo,_:=l.Info(ctx)
+	hostname := workerinfo.Hostname
+	ts:=strconv.FormatInt(time.Now().Unix(), 10);
+	sectorid:=sector.Number
+	log.Warn("Everything is completed. Come on let's rock and roll again!!!!!!!!!")
+	log.Warn("hostname  ",hostname)
+	log.Warn("sector  ",sectorid.String())
+	log.Warn("ts  ",ts)
+	notifyMinerDispatcher(hostname,ts,sectorid.String())
+	log.Warn("====================================================================================")
+
 	return nil
+}
+
+
+func notifyMinerDispatcher(hostname string, timestamp string,sector string) {
+	var dispatcherHome=os.Getenv("LOTUS_DISPATCHER_HOME")
+	log.Warn("LOTUS_DISPATCHER_HOME  ",dispatcherHome)
+	endpoint, _ := url.Parse(dispatcherHome)
+	queryParams := endpoint.Query()
+	queryParams.Set("hostname", hostname)
+	queryParams.Set("ts", timestamp)
+	queryParams.Set("sector", sector)
+	endpoint.RawQuery = queryParams.Encode()
+	log.Warn("send request ",endpoint.String())
+	_, err := http.Get(endpoint.String())
+	if err != nil {
+		log.Error("The HTTP request failed with error %s\n", err)
+	}
 }
 
 func (l *LocalWorker) TaskTypes(context.Context) (map[sealtasks.TaskType]struct{}, error) {
